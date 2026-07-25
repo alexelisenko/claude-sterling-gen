@@ -19,11 +19,19 @@ DIRS = {
 
 
 def view_svg(shape, view, out_svg, scale=1.0, hidden=True):
-    """Write a single hidden-line projection SVG. Returns path."""
+    """Write a single hidden-line projection SVG. Returns path.
+
+    OCCT's HLR can return ZERO edges from eye positions that align
+    exactly with model faces (degenerate silhouettes); if that happens,
+    retry with the eye jittered off-axis."""
     d, up = DIRS[view]
     c = shape.bounding_box().center()
     origin = (c.X + d[0] * 20, c.Y + d[1] * 20, c.Z + d[2] * 20)
     vis, hid = shape.project_to_viewport(origin, viewport_up=up)
+    if not vis:
+        jit = [25.0 if abs(k) < 1e-9 else 0.0 for k in d]
+        origin = (origin[0] + jit[0], origin[1] + jit[1], origin[2] + jit[2])
+        vis, hid = shape.project_to_viewport(origin, viewport_up=up)
     exp = ExportSVG(scale=scale, margin=0, line_weight=0.30)
     exp.add_layer("hidden", line_type=LineType.HIDDEN, line_weight=0.15)
     exp.add_shape(vis)
@@ -66,7 +74,8 @@ def section(shape, plane="XZ"):
     """Half-section: cut the +normal half away to expose internals."""
     big = 10_000
     if plane == "XZ":
-        cutter = Box(big, big, big).located(Location((0, big / 2, 0)))
+        # remove y<0 so the open face looks toward the default cameras (-Y)
+        cutter = Box(big, big, big).located(Location((0, -big / 2, 0)))
     elif plane == "YZ":
         cutter = Box(big, big, big).located(Location((big / 2, 0, 0)))
     else:  # XY
